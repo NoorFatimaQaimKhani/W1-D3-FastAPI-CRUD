@@ -19,7 +19,7 @@ Python 3.12, FastAPI, SQLAlchemy, Alembic, PostgreSQL, Redis, pytest, uv
 uv sync
 uv run python -m scripts.generate_jwt_keys
 ```
-2. Start PostgreSQL and Redis. Keep both private to the application network and use TLS/authentication in deployed environments.
+2. Start PostgreSQL and Redis.
 3. Create a `.env` file in the project root:
 ```
 DATABASE_URL=postgresql+psycopg2://USERNAME:PASSWORD@localhost:5432/DATABASE_NAME
@@ -35,9 +35,6 @@ uv run uvicorn backend.api.main:app --reload
 ```
 Swagger UI: http://127.0.0.1:8000/docs
 
-### Registering or rotating a response-encryption key
-
-Initial registration at `PUT /api/v1/users/me/public-key` requires `public_key_pem` and `current_password`. For key rotation, first request `POST /api/v1/users/me/public-key/challenge`, sign its returned `challenge` string with the currently registered RSA private key using RSA-PSS/SHA-256, then send the challenge ID and Base64 signature with the new public key and current password. Challenges expire after five minutes and are single-use. Redis 6.2 or newer is required for atomic single-use challenge consumption. The private key must remain on the client and must never be uploaded.
 
 ## Run the tests
 
@@ -48,13 +45,6 @@ docker compose -f compose.integration.yml up -d --wait
 $env:DATABASE_URL = "postgresql+psycopg2://customer_records:customer_records_test@localhost:5433/customer_records_test"
 $env:REDIS_URL = "redis://localhost:6380/15"
 uv run pytest -v
-```
-
-Tests refuse non-local PostgreSQL databases or databases not named with the `_test` suffix, require Redis on a nonzero database index, apply `alembic upgrade head`, and truncate the test tables between cases. Do not point tests at production or shared services. The Compose services bind only to localhost and are intended for local testing, not deployment. Stop the services and clear the test URLs when finished:
-
-```powershell
-docker compose -f compose.integration.yml down
-Remove-Item Env:DATABASE_URL, Env:REDIS_URL
 ```
 
 
