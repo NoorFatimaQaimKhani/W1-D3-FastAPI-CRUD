@@ -27,13 +27,6 @@ REDIS_URL=redis://:PASSWORD@localhost:6379/0
 JWT_PRIVATE_KEY_PATH=keys/jwt_private.pem
 JWT_PUBLIC_KEY_PATH=keys/jwt_public.pem
 ```
-4. Create the tables, the first admin, and start the server:
-```powershell
-uv run alembic upgrade head
-uv run python -m scripts.create_admin
-uv run uvicorn backend.api.main:app --reload
-```
-Swagger UI: http://127.0.0.1:8000/docs
 
 
 ## Run the tests
