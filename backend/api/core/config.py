@@ -4,8 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """All configuration comes from environment variables / the .env file.
 
-    Real environment variables take priority over .env, which is how the
-    test-suite points the app at SQLite without touching your PostgreSQL.
+    Real environment variables take priority over .env. Tests require an
+    explicitly configured local PostgreSQL test database and Redis instance.
     """
 
     model_config = SettingsConfigDict(
@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     login_max_attempts: int = 5
     login_window_seconds: int = 900
+    key_rotation_challenge_seconds: int = 300
 
 
 settings = Settings()

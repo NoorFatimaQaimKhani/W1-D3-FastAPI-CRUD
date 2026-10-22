@@ -3,9 +3,15 @@ from sqlalchemy.orm import Session
 
 from backend.api.core.deps import get_current_user, require_roles
 from backend.api.core.permissions import Role
+from backend.api.core.redis_client import get_redis
 from backend.api.db.connection import get_db
 from backend.api.models.user import User
-from backend.api.schemas.user import PublicKeyRegister, UserOut, UserUpdate
+from backend.api.schemas.user import (
+    PublicKeyRegister,
+    PublicKeyRotationChallenge,
+    UserOut,
+    UserUpdate,
+)
 from backend.api.services import user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -22,9 +28,29 @@ def register_public_key(
     data: PublicKeyRegister,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    r=Depends(get_redis),
 ):
-    """Register (or rotate) the RSA public key that customer responses are encrypted to."""
-    return user_service.register_public_key(db, user, data.public_key_pem)
+    """Register a key with password confirmation; rotations also require the old key."""
+    return user_service.register_public_key(
+        db,
+        r,
+        user,
+        data.public_key_pem,
+        data.current_password,
+        str(data.rotation_challenge_id) if data.rotation_challenge_id else None,
+        data.rotation_signature,
+    )
+
+
+@router.post(
+    "/me/public-key/challenge", response_model=PublicKeyRotationChallenge
+)
+def create_public_key_rotation_challenge(
+    user: User = Depends(get_current_user),
+    r=Depends(get_redis),
+):
+    challenge_id, challenge = user_service.create_key_rotation_challenge(r, user)
+    return PublicKeyRotationChallenge(challenge_id=challenge_id, challenge=challenge)
 
 
 # ADMIN only 

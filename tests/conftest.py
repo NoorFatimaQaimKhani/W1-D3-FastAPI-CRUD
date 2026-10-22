@@ -5,8 +5,6 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-os.environ["DATABASE_URL"] = "sqlite://"
-
 _key_dir = Path(tempfile.mkdtemp(prefix="jwt-test-keys-"))
 _test_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 (_key_dir / "private.pem").write_bytes(
@@ -29,39 +27,76 @@ from dataclasses import dataclass  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from backend.api import models  # noqa: E402, F401
+from backend.api.core.config import settings  # noqa: E402
 from backend.api.core.redis_client import get_redis  # noqa: E402
 from backend.api.core.security import hash_password  # noqa: E402
-from backend.api.db.connection import Base, get_db  # noqa: E402
+from backend.api.db.connection import get_db  # noqa: E402
 from backend.api.main import app  # noqa: E402
 from backend.api.models.user import User  # noqa: E402
 from client.crypto import decrypt_envelope, generate_keypair  # noqa: E402
-from tests.fake_redis import FakeRedis  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
 
 
+def _validate_test_services() -> None:
+    database_url = make_url(settings.database_url)
+    if (
+        database_url.get_backend_name() != "postgresql"
+        or not (database_url.database or "").endswith("_test")
+        or database_url.host not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise RuntimeError(
+            "Tests require a local PostgreSQL database whose name ends in _test"
+        )
+
+    redis_url = make_url(settings.redis_url)
+    if (
+        redis_url.host not in {"localhost", "127.0.0.1", "::1"}
+        or not redis_url.database
+        or int(redis_url.database) == 0
+    ):
+        raise RuntimeError(
+            "Tests require a local Redis instance using a nonzero database index"
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def apply_test_migrations():
+    _validate_test_services()
+    from alembic import command
+    from alembic.config import Config
+
+    command.upgrade(Config("alembic.ini"), "head")
+
+
 @pytest.fixture()
 def session_factory():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "TRUNCATE TABLE customers, users RESTART IDENTITY CASCADE"
+        )
     yield sessionmaker(bind=engine, autoflush=False)
-    Base.metadata.drop_all(engine)
     engine.dispose()
 
 
 @pytest.fixture()
-def fake_redis():
-    return FakeRedis()  
+def redis_client():
+    import redis
+
+    client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+    client.flushdb()
+    yield client
+    client.flushdb()
+    client.close()
 
 
 @pytest.fixture()
-def client(session_factory, fake_redis):
+def client(session_factory, redis_client):
     def override_get_db():
         db = session_factory()
         try:
@@ -70,7 +105,7 @@ def client(session_factory, fake_redis):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_redis] = lambda: fake_redis
+    app.dependency_overrides[get_redis] = lambda: redis_client
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -121,7 +156,9 @@ def actors(client, make_user):
         headers = {"Authorization": f"Bearer {login(client, email)}"}
         private_pem, public_pem = generate_keypair()
         r = client.put(
-            "/api/v1/users/me/public-key", headers=headers, json={"public_key_pem": public_pem}
+            "/api/v1/users/me/public-key",
+            headers=headers,
+            json={"public_key_pem": public_pem, "current_password": PASSWORD},
         )
         assert r.status_code == 200, r.text
         result[name] = Actor(user_id, email, headers, private_pem, public_pem)

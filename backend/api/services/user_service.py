@@ -1,12 +1,39 @@
+import secrets
+import uuid
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.core.crypto import InvalidPublicKey, load_rsa_public_key, public_key_fingerprint
+from backend.api.core.config import settings
+from backend.api.core.crypto import (
+    InvalidPublicKey,
+    load_rsa_public_key,
+    public_key_fingerprint,
+    verify_key_rotation_signature,
+)
 from backend.api.core.permissions import Role
+from backend.api.core.security import verify_password
 from backend.api.db.connection import commit
 from backend.api.models.user import User
 from backend.api.repositories import customer_repository, user_repository
 from backend.api.schemas.user import UserUpdate
+
+
+def create_key_rotation_challenge(r, user: User) -> tuple[str, str]:
+    if not user.public_key_pem:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Register a public key before requesting a rotation challenge",
+        )
+
+    challenge_id = str(uuid.uuid4())
+    challenge = secrets.token_urlsafe(32)
+    r.set(
+        f"key_rotation:{user.id}:{challenge_id}",
+        challenge,
+        ex=settings.key_rotation_challenge_seconds,
+    )
+    return challenge_id, challenge
 
 
 def _get_or_404(db: Session, user_id: int) -> User:
@@ -56,11 +83,40 @@ def delete_user(db: Session, admin: User, user_id: int) -> None:
     commit(db)
 
 
-def register_public_key(db: Session, user: User, pem: str) -> User:
+def register_public_key(
+    db: Session,
+    r,
+    user: User,
+    pem: str,
+    current_password: str,
+    rotation_challenge_id: str | None,
+    rotation_signature: str | None,
+) -> User:
+    if not verify_password(current_password, user.hashed_password):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid password")
+
+    if user.public_key_pem:
+        if not rotation_challenge_id or not rotation_signature:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "A signature from the current key is required to rotate it",
+            )
+        challenge = r.getdel(f"key_rotation:{user.id}:{rotation_challenge_id}")
+        if not challenge or not verify_key_rotation_signature(
+            user.public_key_pem, challenge, rotation_signature
+        ):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Invalid or expired key rotation proof"
+            )
+    elif rotation_challenge_id or rotation_signature:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Rotation proof is not needed for initial registration"
+        )
+
     try:
         key = load_rsa_public_key(pem)
     except InvalidPublicKey as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
     user.public_key_pem = pem
     user.public_key_fingerprint = public_key_fingerprint(key)
     commit(db)

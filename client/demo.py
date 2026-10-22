@@ -29,7 +29,11 @@ def main() -> None:
         print("customer w/o key->", r.status_code, r.json())
 
         private_pem, public_pem = generate_keypair()
-        r = http.put(f"{base}/users/me/public-key", headers=auth, json={"public_key_pem": public_pem})
+        r = http.put(
+            f"{base}/users/me/public-key",
+            headers=auth,
+            json={"public_key_pem": public_pem, "current_password": password},
+        )
         print("register key    ->", r.status_code, r.json()["public_key_fingerprint"][:16], "...")
 
         r = http.post(

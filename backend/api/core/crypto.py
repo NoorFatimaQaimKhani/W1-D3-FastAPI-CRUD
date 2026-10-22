@@ -1,9 +1,10 @@
 import base64
+import binascii
 import hashlib
 import json
 import os
 
-from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -64,3 +65,23 @@ def encrypt_for_public_key(public_key_pem: str, payload) -> dict:
         "nonce": _b64(nonce),
         "ciphertext": _b64(ciphertext),
     }
+
+
+def verify_key_rotation_signature(
+    public_key_pem: str, challenge: str, signature_b64: str
+) -> bool:
+    try:
+        public_key = load_rsa_public_key(public_key_pem)
+        signature = base64.b64decode(signature_b64, validate=True)
+        public_key.verify(
+            signature,
+            challenge.encode("ascii"),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+    except (InvalidPublicKey, InvalidSignature, ValueError, binascii.Error):
+        return False
+    return True

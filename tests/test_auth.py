@@ -136,7 +136,7 @@ def test_logout_revokes_the_token(client, make_user):
     assert client.post(f"{API}/auth/logout", headers=headers).status_code == 401
 
 
-def test_revoked_entry_expires_with_the_token(client, make_user, fake_redis):
+def test_revoked_entry_expires_with_the_token(client, make_user, redis_client):
     make_user("u@corp.com")
     token = login(client, "u@corp.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -146,7 +146,7 @@ def test_revoked_entry_expires_with_the_token(client, make_user, fake_redis):
         token, PUBLIC_KEY, algorithms=["RS256"],
         audience=settings.jwt_audience, issuer=settings.jwt_issuer,
     )["jti"]
-    ttl = fake_redis.ttl(token_repository.key_for(jti))
+    ttl = redis_client.ttl(token_repository.key_for(jti))
     assert 0 < ttl <= settings.access_token_expire_minutes * 60  # self-deletes with the token
 
 

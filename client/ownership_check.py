@@ -18,7 +18,11 @@ def make_user(http: httpx.Client, base: str, label: str):
     ]
     headers = {"Authorization": f"Bearer {token}"}
     private_pem, public_pem = generate_keypair()
-    http.put(f"{base}/users/me/public-key", headers=headers, json={"public_key_pem": public_pem})
+    http.put(
+        f"{base}/users/me/public-key",
+        headers=headers,
+        json={"public_key_pem": public_pem, "current_password": password},
+    )
     return headers, private_pem
 
 

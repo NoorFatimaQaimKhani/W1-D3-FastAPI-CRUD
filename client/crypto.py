@@ -37,3 +37,16 @@ def decrypt_envelope(envelope: dict, private_key_pem: bytes):
         AAD,
     )
     return json.loads(plaintext)
+
+
+def sign_key_rotation_challenge(private_key_pem: bytes, challenge: str) -> str:
+    private_key = serialization.load_pem_private_key(private_key_pem, password=None)
+    signature = private_key.sign(
+        challenge.encode("ascii"),
+        padding.PSS(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH,
+        ),
+        hashes.SHA256(),
+    )
+    return base64.b64encode(signature).decode("ascii")
