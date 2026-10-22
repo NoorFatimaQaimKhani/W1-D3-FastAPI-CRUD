@@ -71,10 +71,10 @@ Remove-Item Env:DATABASE_URL, Env:REDIS_URL
 |---|---|---|
 | Login / logout with JWT | API2 Broken Authentication | RS256 tokens, Argon2id, logout revocation in Redis, login rate limit |
 | Roles | API5 Broken Function Level Authorization | server-side role checks |
-| Encrypted responses | API3 Broken Object Property Level Authorization | AES-GCM + RSA-OAEP per response; key registration requires password confirmation and rotation proves possession of the previous key |
-| CRUD | API3, API4 | strict input schemas, pagination limits |
+| Encrypted responses | Confidentiality control | AES-GCM + RSA-OAEP per response; key registration requires password confirmation and rotation proves possession of the previous key |
+| CRUD | API3 Broken Object Property Level Authorization, API4 Unrestricted Resource Consumption | strict input/output schemas, pagination limits |
 | Ownership checks | API1 Broken Object Level Authorization | owner checked on every read, update, delete |
-| Admin user management | API5, API6 | admin-only routes, self-lockout guards |
+| Admin user management | API5 Broken Function Level Authorization | admin-only routes, self-lockout guards |
 
 ## Project structure
 ```
